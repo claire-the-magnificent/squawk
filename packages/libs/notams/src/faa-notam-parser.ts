@@ -30,6 +30,12 @@ const VALID_KEYWORDS = new Set<string>([
 ]);
 
 /**
+ * Long-form keywords used by military-issued NOTAMs, mapped to the equivalent
+ * FAA keyword.
+ */
+const KEYWORD_ALIASES = new Map<string, FaaNotamKeyword>([['AERODROME', 'AD']]);
+
+/**
  * Parses a NOTAM datetime string in YYMMDDHHmm format into a {@link NotamDateTime}.
  *
  * @param str - The 10-digit datetime string (e.g. "2604120730").
@@ -201,8 +207,9 @@ export function parseFaaNotam(raw: string): FaaNotam {
   // Parse NOTAM number
   // NOTAM D: MM/NNN (2-digit month / 3-digit sequence)
   // FDC: D/NNNN (1-digit year / 4-digit sequence)
+  // Military: SNNNN/YY (series letter / 4-digit sequence / 2-digit year)
   const remaining = normalized.substring(cursor);
-  const numberMatch = remaining.match(/^(\d{1,2}\/\d{3,4})\s+/);
+  const numberMatch = remaining.match(/^(\d{1,2}\/\d{3,4}|[A-Z]\d{3,5}\/\d{2})\s+/);
   if (!numberMatch) {
     throw new Error('Unable to parse FAA NOTAM number');
   }
@@ -229,11 +236,11 @@ export function parseFaaNotam(raw: string): FaaNotam {
   let keyword: FaaNotamKeyword | undefined;
   let keywordLength = 0;
 
-  for (const kw of VALID_KEYWORDS) {
+  for (const kw of [...VALID_KEYWORDS, ...KEYWORD_ALIASES.keys()]) {
     // Keyword must be followed by a space or end of string
     if (afterLocation.startsWith(kw + ' ') || afterLocation === kw) {
-      if (!keyword || kw.length > keyword.length) {
-        keyword = kw as FaaNotamKeyword;
+      if (!keywordLength || kw.length > keywordLength) {
+        keyword = KEYWORD_ALIASES.get(kw) ?? (kw as FaaNotamKeyword);
         keywordLength = kw.length;
       }
     }

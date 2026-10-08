@@ -276,6 +276,15 @@ const FDC_ZSE_ROUTE_WA = [
 // AIRSPACE - Wildfire TFR with "WA.." state prefix (from KZSE)
 const FDC_ZSE_AIRSPACE_TFR =
   '!FDC 6/6654 ZSE WA..AIRSPACE 28NM W TWISP, WA..TEMPORARY FLIGHT RESTRICTIONS. PURSUANT TO 14 CFR SECTION 91.137(A)(2) TEMPORARY FLIGHT RESTRICTIONS ARE IN EFFECT TO PROVIDE A SAFE ENVIRONMENT FOR FIRE FIGHTING ACFT OPS. WI AN AREA DEFINED AS 3NM RADIUS OF 482100N1205000W (EAT322062.3) SFC-10000FT CENTRAL WASHINGTON DISPATCH TEL 509-884-3473 OR FREQ 125.300 SISI FIRE IS IN CHARGE OF THE OPERATION. SEATTLE/ZSE/ARTCC TEL 253-351-3698 IS THE FAA CDN FAC. DLY 1600-0200 2610011600-2610150200';
+// -- Military NOTAMs with a series-letter number (from KGRF, NMS 2026-10) --
+
+// AERODROME - Instrument approach minimums changed at Gray AAF (from KGRF)
+const KGRF_AERODROME_IAP =
+  '!KGRF V0397/26 GRF AERODROME INSTRUMENT APPROACH PROCEDURE CHANGED RNAV GPS RWY 15 CIRCLING MINIMUM CAT AB 940-1 639 (700-1) CAT C 940-1 3/4 639 (700-1 3/4) CAT D 940-2 639 (700-2). KTCM ALTIMETER: CIRCLING MINIMUM CAT AB 960-1 659 (700-1) 960-1 3/4 659 (700-1 3/4) 960-2 659 (700-2). 2608232359-2712242359';
+
+// OBST - Crane near Gray AAF, with a CRLF inside the body (from KGRF)
+const KGRF_OBST_CRANE =
+  '!KGRF M0554/26 GRF OBST CRANE 470428N1223409W (.55NM ESE GRF) 578FT MSL\r\n (250FT AGL) FLAGGED AND LGTD 2608232359-2611132359';
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -857,6 +866,45 @@ describe('parseFaaNotam', () => {
           parseFaaNotam('!FDC 6/9312 ZSE OR..BOGUS ZSE. V182 MRA 8000. 2605111405-2805111405EST'),
         ).toThrow(/keyword/);
       });
+    });
+  });
+
+  describe('series-letter NOTAM numbers (military)', () => {
+    it('parses a "V0397/26" number and the AERODROME long-form keyword', () => {
+      const result = parseFaaNotam(KGRF_AERODROME_IAP);
+      expect(result.accountability).toBe('KGRF');
+      expect(result.classification).toBe('NOTAM_D');
+      expect(result.notamNumber).toBe('V0397/26');
+      expect(result.locationCode).toBe('GRF');
+      expect(result.keyword).toBe('AD');
+      assert(result.text.startsWith('INSTRUMENT APPROACH PROCEDURE CHANGED RNAV GPS RWY 15'));
+      expect(result.effectiveFrom).toEqual({ year: 26, month: 8, day: 23, hour: 23, minute: 59 });
+      expect(result.effectiveUntil).toEqual({ year: 27, month: 12, day: 24, hour: 23, minute: 59 });
+      expect(result.isEstimatedEnd).toBe(false);
+      expect(result.isPermanent).toBe(false);
+    });
+
+    it('parses an "M0554/26" number with an ordinary keyword and CRLF in the body', () => {
+      const result = parseFaaNotam(KGRF_OBST_CRANE);
+      expect(result.accountability).toBe('KGRF');
+      expect(result.notamNumber).toBe('M0554/26');
+      expect(result.keyword).toBe('OBST');
+      expect(result.text).toBe(
+        'CRANE 470428N1223409W (.55NM ESE GRF) 578FT MSL (250FT AGL) FLAGGED AND LGTD',
+      );
+    });
+
+    it('still reads the month/sequence number form unchanged', () => {
+      expect(parseFaaNotam(ATL_NAV_ILS).notamNumber).toBe('03/296');
+    });
+
+    it('still throws on a malformed series-letter number', () => {
+      expect(() =>
+        parseFaaNotam('!KGRF V03/26 GRF OBST CRANE 578FT MSL 2608232359-2611132359'),
+      ).toThrow(/NOTAM number/);
+      expect(() =>
+        parseFaaNotam('!KGRF V0395-26 GRF OBST CRANE 578FT MSL 2608232359-2611132359'),
+      ).toThrow(/NOTAM number/);
     });
   });
 
