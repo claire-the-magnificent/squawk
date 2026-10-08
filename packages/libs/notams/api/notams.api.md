@@ -26,6 +26,7 @@ export interface FaaNotam {
     locationCode: string;
     notamNumber: string;
     raw: string;
+    state?: string;
     text: string;
 }
 

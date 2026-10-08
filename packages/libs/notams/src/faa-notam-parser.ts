@@ -218,7 +218,13 @@ export function parseFaaNotam(raw: string): FaaNotam {
   const locationCode = locationMatch[1]!;
   cursor += locationMatch[0].length;
 
-  // Parse keyword
+  // Parse the optional state prefix that en-route FDCs put in front of the keyword
+  // (e.g. "WA..AIRSPACE", "OR..ROUTE"), then the keyword
+  const statePrefixMatch = normalized.substring(cursor).match(/^([A-Z]{2})\.\.(?=[A-Z])/);
+  const state = statePrefixMatch?.[1];
+  if (statePrefixMatch) {
+    cursor += statePrefixMatch[0].length;
+  }
   const afterLocation = normalized.substring(cursor);
   let keyword: FaaNotamKeyword | undefined;
   let keywordLength = 0;
@@ -280,6 +286,7 @@ export function parseFaaNotam(raw: string): FaaNotam {
     notamNumber,
     locationCode,
     keyword,
+    ...(state !== undefined ? { state } : {}),
     ...(airportName !== undefined ? { airportName } : {}),
     ...(airportLocation !== undefined ? { airportLocation } : {}),
     text: bodyText,

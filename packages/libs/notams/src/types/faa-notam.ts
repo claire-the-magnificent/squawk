@@ -134,6 +134,12 @@ export interface FaaNotam {
   /** The keyword identifying the subject matter of the NOTAM. */
   keyword: FaaNotamKeyword;
   /**
+   * Two-letter state code that prefixes the keyword on some en-route NOTAMs
+   * (e.g. "WA" from `ZSE WA..ROUTE ZSE.`). Not present when the keyword follows
+   * the location identifier directly.
+   */
+  state?: string;
+  /**
    * Full airport/facility name for FDC NOTAMs (e.g. "HARTSFIELD/JACKSON ATLANTA INTL").
    * Not present on NOTAM D (facility-issued) NOTAMs.
    */
