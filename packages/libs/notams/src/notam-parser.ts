@@ -257,11 +257,31 @@ function extractItem(
   return text.substring(pos.start, pos.end).trim();
 }
 
+/** Trailing `SOURCE: <originator>` line that some feeds append after the last item. */
+const SOURCE_FOOTER = /\s+SOURCE:\s*[A-Z0-9]+\s*$/i;
+
+/** Trailing `CREATED: 15 Nov 2022 15:42:00` line that some feeds append after the last item. */
+const CREATED_FOOTER = /\s+CREATED:\s*\d{1,2}\s+[A-Za-z]{3}\s+\d{4}\s+\d{2}:\d{2}(?::\d{2})?\s*$/i;
+
+/**
+ * Removes the `CREATED:` / `SOURCE:` footer that some feeds append to a NOTAM so it is not
+ * read as part of the last item's value.
+ *
+ * @param text - The normalized NOTAM text.
+ * @returns The text without the footer.
+ */
+function stripFooter(text: string): string {
+  return text.replace(SOURCE_FOOTER, '').replace(CREATED_FOOTER, '');
+}
+
 /**
  * Parses a raw ICAO-format NOTAM string into a structured {@link Notam} object.
  *
  * Handles NOTAMN (new), NOTAMR (replacement), and NOTAMC (cancellation)
- * action types. Parses the Q-line qualifier (FIR, NOTAM code, traffic type,
+ * action types. The `A1234/26 NOTAMN` header line may be omitted when the text
+ * starts at the Q-line, as in the ICAO rendering served by the FAA NMS; `id` and
+ * `action` are then undefined. A trailing `CREATED:` / `SOURCE:` footer is
+ * ignored. Parses the Q-line qualifier (FIR, NOTAM code, traffic type,
  * purpose, scope, altitude limits, coordinates/radius) and items A through G
  * (location, effective period, schedule, free-text description, altitude limits).
  *
@@ -288,20 +308,21 @@ export function parseNotam(raw: string): Notam {
   }
 
   // Normalize to single-spaced for easier parsing, preserving original for raw field
-  const normalized = trimmed.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+  const normalized = stripFooter(trimmed.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim());
 
   // Parse the NOTAM header: ID and action type
   // Formats: "A1242/24 NOTAMN", "A1242/24 NOTAMR A1200/24", "A1242/24 NOTAMC A1200/24"
+  // The header is optional only when the text begins at the Q-line.
   const headerMatch = normalized.match(
     /\b([A-Z]\d{1,5}\/\d{2})\s+NOTAM([NRC])(?:\s+([A-Z]\d{1,5}\/\d{2}))?\b/,
   );
-  if (!headerMatch) {
+  if (!headerMatch && !/^Q\)/i.test(normalized)) {
     throw new Error('Unable to parse NOTAM header: expected ID and NOTAMN/R/C');
   }
 
-  const id = headerMatch[1]!;
-  let action: NotamAction;
-  switch (headerMatch[2]) {
+  const id = headerMatch?.[1];
+  let action: NotamAction | undefined;
+  switch (headerMatch?.[2]) {
     case 'N':
       action = 'NEW';
       break;
@@ -311,10 +332,8 @@ export function parseNotam(raw: string): Notam {
     case 'C':
       action = 'CANCEL';
       break;
-    default:
-      action = 'NEW';
   }
-  const referencedId = headerMatch[3];
+  const referencedId = headerMatch?.[3];
 
   // Extract Q-line. Each of the 8 slash-separated fields excludes both ')' and
   // '/' so the engine cannot try multiple distributions of the slashes between
@@ -377,8 +396,8 @@ export function parseNotam(raw: string): Notam {
 
   return {
     raw: trimmed,
-    id,
-    action,
+    ...(id !== undefined ? { id } : {}),
+    ...(action !== undefined ? { action } : {}),
     ...(referencedId ? { referencedId } : {}),
     ...(qualifier ? { qualifier } : {}),
     locationCodes,

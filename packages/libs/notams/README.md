@@ -58,7 +58,10 @@ Parses the Q-line qualifier and items A through G:
 - **Item G** - Upper altitude limit (e.g. "UNL", "FL180")
 
 Accepts both multi-line and single-line NOTAM input. Gracefully handles
-NOTAMs without a Q-line when items A through E are present.
+NOTAMs without a Q-line when items A through E are present. The
+`A1234/26 NOTAMN` header line is optional when the text starts at the Q-line
+(as in the ICAO rendering served by the FAA NMS); `id` and `action` are then
+undefined. A trailing `CREATED:` / `SOURCE:` footer is ignored.
 
 ### `parseFaaNotam(raw)`
 

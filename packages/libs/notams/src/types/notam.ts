@@ -779,10 +779,16 @@ export interface NotamDateTime {
 export interface Notam {
   /** The original raw NOTAM string as provided to the parser. */
   raw: string;
-  /** NOTAM series and number identifier (e.g. "A1242/24", "C0156/26"). */
-  id: string;
-  /** Action type indicating whether this is a new, replacement, or cancellation NOTAM. */
-  action: NotamAction;
+  /**
+   * NOTAM series and number identifier (e.g. "A1242/24", "C0156/26").
+   * Undefined when the input has no `A1242/24 NOTAMN` header line.
+   */
+  id?: string;
+  /**
+   * Action type indicating whether this is a new, replacement, or cancellation NOTAM.
+   * Undefined when the input has no `A1242/24 NOTAMN` header line.
+   */
+  action?: NotamAction;
   /** The NOTAM ID being replaced or cancelled (present when action is REPLACE or CANCEL). */
   referencedId?: string;
   /** Parsed Q-line qualifier data. */

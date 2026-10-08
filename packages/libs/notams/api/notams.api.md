@@ -38,10 +38,10 @@ export type FaaNotamKeyword = 'RWY' | 'TWY' | 'APRON' | 'AD' | 'OBST' | 'NAV' | 
 
 // @public
 export interface Notam {
-    action: NotamAction;
+    action?: NotamAction;
     effectiveFrom: NotamDateTime;
     effectiveUntil?: NotamDateTime;
-    id: string;
+    id?: string;
     isEstimatedEnd: boolean;
     isPermanent: boolean;
     isUntilFurtherNotice: boolean;
