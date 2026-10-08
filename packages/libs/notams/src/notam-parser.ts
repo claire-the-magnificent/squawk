@@ -201,10 +201,16 @@ function parseQLine(qLine: string): NotamQualifier | undefined {
   };
 }
 
+/** Optional items that sit before the mandatory Item E, and so cannot start after it. */
+const ITEMS_BEFORE_E = new Set(['C', 'D']);
+
 /**
  * Finds the ordered positions of NOTAM item delimiters (A) through G)) in the text.
  * Only considers delimiters that appear in valid ICAO order (A, B, C, D, E, F, G)
  * after the Q-line region, preventing false matches inside free-text content.
+ * Items C and D are optional; one is only accepted when it starts before the first
+ * Item E delimiter, so a stray " D)" inside the E text (e.g. "(CAT D)") is not
+ * mistaken for a missing Item D.
  *
  * @param text - The normalized NOTAM text.
  * @returns A map of item letters to their start positions (position after the "X) " delimiter).
@@ -227,7 +233,15 @@ function findItemPositions(text: string): Map<string, { start: number; end: numb
     pattern.lastIndex = cursor;
     const match = pattern.exec(text);
 
-    if (match && match.index >= cursor) {
+    let beforeE = true;
+    if (match && ITEMS_BEFORE_E.has(letter)) {
+      const itemE = /(?:^|\s)E\)\s*/g;
+      itemE.lastIndex = cursor;
+      const eMatch = itemE.exec(text);
+      beforeE = !eMatch || match.index <= eMatch.index;
+    }
+
+    if (match && match.index >= cursor && beforeE) {
       const valueStart = match.index + match[0].length;
       positions.push({ letter, delimiterStart: match.index, valueStart });
       cursor = valueStart;
@@ -362,7 +376,11 @@ export function parseNotam(raw: string): Notam {
   if (!itemA) {
     throw new Error('Unable to parse NOTAM Item A (location)');
   }
-  const locationCodes = itemA.split(/\s+/).filter((s) => s.length > 0);
+  // Multi-part NOTAMs mark each part in Item A ("EDGG PART 1 OF 2"); that is not a location
+  const locationCodes = itemA
+    .replace(/\bPART\s+\d+\s+OF\s+\d+\b/gi, ' ')
+    .split(/\s+/)
+    .filter((s) => s.length > 0);
 
   const itemB = extractItem(normalized, 'B', itemPositions);
   if (!itemB) {

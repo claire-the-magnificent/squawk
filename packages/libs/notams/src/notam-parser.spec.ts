@@ -1045,3 +1045,142 @@ describe('parseNotam - CREATED/SOURCE footer', () => {
     expect(result.text).toBe('RWY 09R/27L CREATED: 01 Jan 2002 01:00:00 AS DEPICTED');
   });
 });
+
+describe('parseNotam - delimiter-like text inside Item E', () => {
+  // Real NOTAMs with no Item D whose E text contains " D)" (from the ICAO world dataset)
+  const TWY_FM_A_TO_D = [
+    'B1965/26 NOTAMR B0640/26',
+    'Q) RPHI/QMXLT/IV/M/A/000/999/1512N12033E005',
+    'A) RPLC B) 2605070953 C) 2608072359EST',
+    'E) PORTION OF TWY K1 (FM TWY A TO D)',
+    'LTD TO CODE B AND LOWER CAT ACFT.',
+  ].join('\n');
+
+  const WRAPPED_FIR_LIST = [
+    'B0531/26 NOTAMR B0073/26',
+    'Q) MMFO/QRDCA/IV/BO/W/000/999/1723N11312W857',
+    'A) MMFO B) 2603161944 C) 2606150500',
+    'E) THE GOVERNMENT OF THE UNITED STATES OF AMERICA HAS ISSUED AN ADVIS',
+    'ORY',
+    '   REGARDING A POTENTIALLY HAZARDOUS SITUATION WITHIN THE MAZATLAN',
+    '   OCEANIC (MMFO), MEXICO (MMFR), CENTRAL AMERICA (MHTG), BOGOTA (SKE',
+    'D),',
+    '   GUAYAQUIL (SEFG), AND PANAMA (MPZL) FLIGHT INFORMATION REGIONS.',
+  ].join('\n');
+
+  const TWY_CERT = [
+    'C0197/26 NOTAMR C0061/26',
+    'Q) CZEG/QMRXX/IV/NBO/A/000/999/6043N13504W005',
+    'A) CYXY B) 2601261518 C) PERM',
+    'E) AMEND PUBLICATIONS: ',
+    'RWY DATA: RWY 14L/32R WIDTH TO READ: 98FT ',
+    'RWY CERT: RWY 14R/32L AGN TO READ: ',
+    'V PPR FOR AGN IV OR GREATER 867-332-5227 ',
+    'TWY CERT: TWY E TO READ: ',
+    'AGN IV FR RWY 02/20 TO TWY D AND AGN V S OF TWY D)',
+  ].join('\n');
+
+  it('parses Item E when no Item D exists and the text contains " D)"', () => {
+    const result = parseNotam(TWY_FM_A_TO_D);
+    expect(result.id).toBe('B1965/26');
+    expect(result.referencedId).toBe('B0640/26');
+    expect(result.locationCodes).toEqual(['RPLC']);
+    expect(result.schedule).toBeUndefined();
+    expect(result.text).toBe('PORTION OF TWY K1 (FM TWY A TO D) LTD TO CODE B AND LOWER CAT ACFT.');
+    expect(result.lowerLimit).toBeUndefined();
+    expect(result.upperLimit).toBeUndefined();
+  });
+
+  it('parses Item E when a word is wrapped so that "D)" starts a line', () => {
+    const result = parseNotam(WRAPPED_FIR_LIST);
+    expect(result.schedule).toBeUndefined();
+    assert(result.text.startsWith('THE GOVERNMENT OF THE UNITED STATES'));
+    assert(result.text.endsWith('FLIGHT INFORMATION REGIONS.'));
+    assert(result.text.includes('(SKE D),'));
+  });
+
+  it('parses Item E when the text ends with a stray "D)"', () => {
+    const result = parseNotam(TWY_CERT);
+    expect(result.isPermanent).toBe(true);
+    expect(result.schedule).toBeUndefined();
+    assert(result.text.endsWith('AGN V S OF TWY D)'));
+  });
+
+  it('ignores a later " E)" mention when deciding whether Item D exists', () => {
+    const result = parseNotam(
+      [
+        'A0001/26 NOTAMN',
+        'Q) RPHI/QMXLT/IV/M/A/000/999/1512N12033E005',
+        'A) RPLC B) 2605070953 C) 2608072359',
+        'E) TWY K1 LTD TO CAT (A TO D) ACFT, EXC (CAT D) AND (CAT E) ACFT',
+      ].join('\n'),
+    );
+    expect(result.schedule).toBeUndefined();
+    expect(result.text).toBe('TWY K1 LTD TO CAT (A TO D) ACFT, EXC (CAT D) AND (CAT E) ACFT');
+  });
+
+  it('parses Item E when no Item C exists and the text contains " C)"', () => {
+    const result = parseNotam(
+      [
+        'A0001/26 NOTAMN',
+        'Q) RPHI/QMXLT/IV/M/A/000/999/1512N12033E005',
+        'A) RPLC B) 2605070953',
+        'E) TWY K1 LTD TO CODE (A, B OR C) ACFT',
+      ].join('\n'),
+    );
+    expect(result.effectiveUntil).toBeUndefined();
+    expect(result.isPermanent).toBe(false);
+    expect(result.text).toBe('TWY K1 LTD TO CODE (A, B OR C) ACFT');
+  });
+
+  it('still reads a real Item D that precedes Item E', () => {
+    const result = parseNotam(
+      [
+        'A0001/26 NOTAMN',
+        'Q) RPHI/QMXLT/IV/M/A/000/999/1512N12033E005',
+        'A) RPLC B) 2605070953 C) 2608072359',
+        'D) DLY 0700-1500',
+        'E) TWY K1 LTD TO CODE (A TO D) ACFT',
+      ].join('\n'),
+    );
+    expect(result.schedule).toBe('DLY 0700-1500');
+    expect(result.text).toBe('TWY K1 LTD TO CODE (A TO D) ACFT');
+  });
+});
+
+describe('parseNotam - multi-part NOTAM Item A', () => {
+  // Three parts of one Frankfurt FIR restricted-area NOTAM (from the svoop/notam test factory)
+  const part = (n: string, tail: string): string =>
+    [
+      'D3616/22 NOTAMN',
+      'Q) EDGG/QRTCA/IV/BO /W /000/100/5003N00804E012',
+      `A) EDGG PART ${n} B) 2211160800 C) 2211181800`,
+      'D) NOV 16 0800-2200, NOV 17 0500-2200, NOV 18 0500-1800',
+      tail,
+    ].join('\n');
+
+  it('does not return the PART marker as location codes', () => {
+    const result = parseNotam(
+      part('10 OF 11', 'E) TEMPO RESTRICTED AREA EDR RHEINGAU ESTABLISHED'),
+    );
+    expect(result.locationCodes).toEqual(['EDGG']);
+    expect(result.effectiveFrom).toEqual({ year: 22, month: 11, day: 16, hour: 8, minute: 0 });
+    expect(result.schedule).toBe('NOV 16 0800-2200, NOV 17 0500-2200, NOV 18 0500-1800');
+    expect(result.text).toBe('TEMPO RESTRICTED AREA EDR RHEINGAU ESTABLISHED');
+  });
+
+  it('handles single-digit part numbers', () => {
+    const result = parseNotam(
+      part('2 OF 2', 'E) - FLTS CONDUCTED ENTIRELY UNDER IFR\nF) GND G) FL100\nEND PART 2 OF 2'),
+    );
+    expect(result.locationCodes).toEqual(['EDGG']);
+    expect(result.lowerLimit).toBe('GND');
+  });
+
+  it('keeps a following location code alongside the PART marker', () => {
+    const result = parseNotam(
+      part('1 OF 2', 'E) X').replace('A) EDGG PART 1 OF 2', 'A) EDGG EDDM PART 1 OF 2'),
+    );
+    expect(result.locationCodes).toEqual(['EDGG', 'EDDM']);
+  });
+});
