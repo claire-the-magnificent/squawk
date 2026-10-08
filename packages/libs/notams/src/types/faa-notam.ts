@@ -31,7 +31,7 @@ export const FAA_NOTAM_CLASSIFICATION_MAP: Record<FaaNotamClassification, string
  * - `RWY` - Runway
  * - `TWY` - Taxiway
  * - `APRON` - Apron/ramp area
- * - `AD` - Aerodrome
+ * - `AD` - Aerodrome (also produced for the long-form `AERODROME` keyword used by military NOTAMs)
  * - `OBST` - Obstruction
  * - `NAV` - Navigation aid
  * - `COM` - Communication
@@ -127,7 +127,10 @@ export interface FaaNotam {
   accountability: string;
   /** Classification of the NOTAM (facility-issued NOTAM D or Flight Data Center). */
   classification: FaaNotamClassification;
-  /** The NOTAM number as it appears in the source (e.g. "03/296" for NOTAM D, "5/3374" for FDC). */
+  /**
+   * The NOTAM number as it appears in the source (e.g. "03/296" for NOTAM D, "5/3374" for FDC,
+   * "V0395/26" for military NOTAMs numbered with a series letter).
+   */
   notamNumber: string;
   /** The affected location identifier (e.g. "ATL", "BOS", "ANC"). */
   locationCode: string;
