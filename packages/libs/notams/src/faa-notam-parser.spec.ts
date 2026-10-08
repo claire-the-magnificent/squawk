@@ -257,6 +257,16 @@ const FDC_BOS_IAP = [
   'GDM VOR/DME UNMONITORED. 2604041524-2605041524EST',
 ].join('\n');
 
+// -- FAA NOTAM Search style samples with 12-digit (YYYYMMDDHHMM) effective periods --
+// The search results omit the leading "!"; it is added here because the parser requires it.
+
+// OBST - Tower lighting out of service, definite end (from KTVI)
+const SEARCH_TVI_OBST =
+  '!MCN 02/142 KTVI OBST TOWER LGT (ASR 1227719) 304050.30N0835820.60W (14.1NM. SSW TVI) 2151.9FT (1997.0FT AGL) U/S 202102061252-202103081252';
+
+// RWY - Runway end lighting out of service, estimated end (from KMVC)
+const SEARCH_MVC_RWY = '!ANB 05/310 KMVC RWY 21 RWY END ID LGT U/S 202005151327-202103152111EST';
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -790,6 +800,88 @@ describe('parseFaaNotam', () => {
         expect(result.airportName).toBe('TED STEVENS ANCHORAGE INTL');
         expect(result.airportLocation).toBe('ANCHORAGE, AK');
       });
+    });
+  });
+
+  describe('12-digit effective periods (FAA NOTAM Search)', () => {
+    it('parses YYYYMMDDHHMM-YYYYMMDDHHMM', () => {
+      const result = parseFaaNotam(SEARCH_TVI_OBST);
+      expect(result.accountability).toBe('MCN');
+      expect(result.notamNumber).toBe('02/142');
+      expect(result.locationCode).toBe('KTVI');
+      expect(result.keyword).toBe('OBST');
+      expect(result.text).toBe(
+        'TOWER LGT (ASR 1227719) 304050.30N0835820.60W (14.1NM. SSW TVI) 2151.9FT (1997.0FT AGL) U/S',
+      );
+      expect(result.effectiveFrom).toEqual({ year: 21, month: 2, day: 6, hour: 12, minute: 52 });
+      expect(result.effectiveUntil).toEqual({ year: 21, month: 3, day: 8, hour: 12, minute: 52 });
+      expect(result.isEstimatedEnd).toBe(false);
+      expect(result.isPermanent).toBe(false);
+    });
+
+    it('parses the EST suffix after a 12-digit end', () => {
+      const result = parseFaaNotam(SEARCH_MVC_RWY);
+      expect(result.keyword).toBe('RWY');
+      expect(result.text).toBe('21 RWY END ID LGT U/S');
+      expect(result.effectiveFrom).toEqual({ year: 20, month: 5, day: 15, hour: 13, minute: 27 });
+      expect(result.effectiveUntil).toEqual({ year: 21, month: 3, day: 15, hour: 21, minute: 11 });
+      expect(result.isEstimatedEnd).toBe(true);
+    });
+
+    it('parses a 12-digit start with PERM', () => {
+      const result = parseFaaNotam('!RNT 10/025 RNT TWY A CLSD 202610011200-PERM');
+      expect(result.effectiveFrom).toEqual({ year: 26, month: 10, day: 1, hour: 12, minute: 0 });
+      expect(result.effectiveUntil).toBeUndefined();
+      expect(result.isPermanent).toBe(true);
+    });
+
+    it('produces the same result as the 10-digit form of the same period', () => {
+      const long = parseFaaNotam('!RNT 10/025 RNT TWY A CLSD 202610011200-202610201200');
+      const short = parseFaaNotam('!RNT 10/025 RNT TWY A CLSD 2610011200-2610201200');
+      expect({ ...long, raw: '' }).toEqual({ ...short, raw: '' });
+    });
+
+    it('still rejects timestamps that are neither 10 nor 12 digits', () => {
+      expect(() => parseFaaNotam('!RNT 10/025 RNT TWY A CLSD 20261001120-20261020120')).toThrow(
+        /effective period/,
+      );
+      expect(() => parseFaaNotam('!RNT 10/025 RNT TWY A CLSD 2026100112000-2026102012000')).toThrow(
+        /effective period/,
+      );
+    });
+  });
+
+  describe('lowercase input', () => {
+    it('parses a lowercase NOTAM D, normalizing the structural fields to uppercase', () => {
+      const result = parseFaaNotam(ATL_NAV_ILS.toLowerCase());
+      expect(result).toEqual({
+        ...parseFaaNotam(ATL_NAV_ILS),
+        raw: ATL_NAV_ILS.toLowerCase(),
+        text: 'ils rwy 08l im u/s',
+      });
+    });
+
+    it('parses a lowercase FDC, leaving the body as written', () => {
+      const result = parseFaaNotam(FDC_ANC_SID.toLowerCase());
+      expect(result.accountability).toBe('FDC');
+      expect(result.classification).toBe('FDC');
+      expect(result.notamNumber).toBe('5/2149');
+      expect(result.locationCode).toBe('ANC');
+      expect(result.keyword).toBe('SID');
+      assert(result.text.startsWith('ted stevens anchorage intl, anchorage, ak.'));
+      expect(result.isEstimatedEnd).toBe(true);
+    });
+
+    it('parses lowercase perm', () => {
+      const result = parseFaaNotam('!rnt 10/025 rnt twy a clsd 2610011200-perm');
+      expect(result.keyword).toBe('TWY');
+      expect(result.isPermanent).toBe(true);
+    });
+
+    it('still throws on an unknown keyword', () => {
+      expect(() => parseFaaNotam('!atl 03/296 atl bogus ils u/s 2603181657-2711082111est')).toThrow(
+        /keyword/,
+      );
     });
   });
 
