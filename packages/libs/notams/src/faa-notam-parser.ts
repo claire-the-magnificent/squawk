@@ -36,28 +36,34 @@ const VALID_KEYWORDS = new Set<string>([
 const KEYWORD_ALIASES = new Map<string, FaaNotamKeyword>([['AERODROME', 'AD']]);
 
 /**
- * Parses a NOTAM datetime string in YYMMDDHHmm format into a {@link NotamDateTime}.
+ * Parses a NOTAM datetime string in YYMMDDHHmm format (or the 12-digit
+ * YYYYMMDDHHmm variant used by FAA NOTAM Search) into a {@link NotamDateTime}.
+ * The year is reduced to its last two digits in both cases.
  *
- * @param str - The 10-digit datetime string (e.g. "2604120730").
+ * @param str - The 10- or 12-digit datetime string (e.g. "2604120730" or "202604120730").
  * @returns The parsed datetime, or undefined if the format is invalid.
  */
 function parseNotamDateTime(str: string): NotamDateTime | undefined {
   const cleaned = str.trim();
-  if (cleaned.length !== 10 || !/^\d{10}$/.test(cleaned)) {
+  if (!/^(?:\d{2}){5,6}$/.test(cleaned)) {
     return undefined;
   }
+  // A 4-digit year contributes only its last two digits
+  const digits = cleaned.length === 12 ? cleaned.substring(2) : cleaned;
   return {
-    year: parseInt(cleaned.substring(0, 2), 10),
-    month: parseInt(cleaned.substring(2, 4), 10),
-    day: parseInt(cleaned.substring(4, 6), 10),
-    hour: parseInt(cleaned.substring(6, 8), 10),
-    minute: parseInt(cleaned.substring(8, 10), 10),
+    year: parseInt(digits.substring(0, 2), 10),
+    month: parseInt(digits.substring(2, 4), 10),
+    day: parseInt(digits.substring(4, 6), 10),
+    hour: parseInt(digits.substring(6, 8), 10),
+    minute: parseInt(digits.substring(8, 10), 10),
   };
 }
 
 /**
  * Parses the effective period from the end of an FAA domestic NOTAM.
- * Handles formats: `YYMMDDHHMM-YYMMDDHHMM`, `YYMMDDHHMM-YYMMDDHHMMEST`, and `YYMMDDHHMM-PERM`.
+ * Handles formats: `YYMMDDHHMM-YYMMDDHHMM`, `YYMMDDHHMM-YYMMDDHHMMEST`, and `YYMMDDHHMM-PERM`,
+ * plus the same three with 12-digit `YYYYMMDDHHMM` timestamps. The `EST` and `PERM` suffixes are
+ * matched case-insensitively.
  *
  * @param periodStr - The raw effective period string.
  * @returns The parsed effective period fields, or undefined if the format is invalid.
@@ -72,13 +78,15 @@ function parseEffectivePeriod(periodStr: string):
   | undefined {
   const trimmed = periodStr.trim();
 
-  // Match: YYMMDDHHMM-YYMMDDHHMM[EST] or YYMMDDHHMM-PERM
-  const match = trimmed.match(/^(\d{10})-(\d{10})(EST)?$|^(\d{10})-(PERM)$/);
+  // Match: YYMMDDHHMM-YYMMDDHHMM[EST] or YYMMDDHHMM-PERM (10 or 12 digits per timestamp)
+  const match = trimmed.match(
+    /^(\d{10}(?:\d{2})?)-(\d{10}(?:\d{2})?)(EST)?$|^(\d{10}(?:\d{2})?)-(PERM)$/i,
+  );
   if (!match) {
     return undefined;
   }
 
-  if (match[5] === 'PERM') {
+  if (match[5] !== undefined) {
     // YYMMDDHHMM-PERM
     const from = parseNotamDateTime(match[4]!);
     if (!from) {
@@ -101,7 +109,7 @@ function parseEffectivePeriod(periodStr: string):
   return {
     effectiveFrom: from,
     effectiveUntil: until,
-    isEstimatedEnd: match[3] === 'EST',
+    isEstimatedEnd: match[3] !== undefined,
     isPermanent: false,
   };
 }
@@ -183,7 +191,7 @@ export function parseFaaNotam(raw: string): FaaNotam {
   }
 
   // Determine classification: FDC vs facility (NOTAM D)
-  const isFdc = normalized.startsWith('!FDC ');
+  const isFdc = /^!FDC /i.test(normalized);
 
   let accountability: string;
   let classification: FaaNotamClassification;
@@ -195,11 +203,11 @@ export function parseFaaNotam(raw: string): FaaNotam {
     cursor = 5; // past "!FDC "
   } else {
     // Extract facility accountability: !XXX where XXX is 2-4 alphanumeric chars
-    const acctMatch = normalized.match(/^!([A-Z0-9]{2,4})\s+/);
+    const acctMatch = normalized.match(/^!([A-Z0-9]{2,4})\s+/i);
     if (!acctMatch) {
       throw new Error('Unable to parse FAA NOTAM accountability');
     }
-    accountability = acctMatch[1]!;
+    accountability = acctMatch[1]!.toUpperCase();
     classification = 'NOTAM_D';
     cursor = acctMatch[0].length;
   }
@@ -209,30 +217,30 @@ export function parseFaaNotam(raw: string): FaaNotam {
   // FDC: D/NNNN (1-digit year / 4-digit sequence)
   // Military: SNNNN/YY (series letter / 4-digit sequence / 2-digit year)
   const remaining = normalized.substring(cursor);
-  const numberMatch = remaining.match(/^(\d{1,2}\/\d{3,4}|[A-Z]\d{3,5}\/\d{2})\s+/);
+  const numberMatch = remaining.match(/^(\d{1,2}\/\d{3,4}|[A-Z]\d{3,5}\/\d{2})\s+/i);
   if (!numberMatch) {
     throw new Error('Unable to parse FAA NOTAM number');
   }
-  const notamNumber = numberMatch[1]!;
+  const notamNumber = numberMatch[1]!.toUpperCase();
   cursor += numberMatch[0].length;
 
   // Parse location code (2-4 alphanumeric identifier)
   const afterNumber = normalized.substring(cursor);
-  const locationMatch = afterNumber.match(/^([A-Z0-9]{2,4})\s+/);
+  const locationMatch = afterNumber.match(/^([A-Z0-9]{2,4})\s+/i);
   if (!locationMatch) {
     throw new Error('Unable to parse FAA NOTAM location code');
   }
-  const locationCode = locationMatch[1]!;
+  const locationCode = locationMatch[1]!.toUpperCase();
   cursor += locationMatch[0].length;
 
   // Parse the optional state prefix that en-route FDCs put in front of the keyword
   // (e.g. "WA..AIRSPACE", "OR..ROUTE"), then the keyword
-  const statePrefixMatch = normalized.substring(cursor).match(/^([A-Z]{2})\.\.(?=[A-Z])/);
-  const state = statePrefixMatch?.[1];
+  const statePrefixMatch = normalized.substring(cursor).match(/^([A-Z]{2})\.\.(?=[A-Z])/i);
+  const state = statePrefixMatch?.[1]?.toUpperCase();
   if (statePrefixMatch) {
     cursor += statePrefixMatch[0].length;
   }
-  const afterLocation = normalized.substring(cursor);
+  const afterLocation = normalized.substring(cursor).toUpperCase();
   let keyword: FaaNotamKeyword | undefined;
   let keywordLength = 0;
 
@@ -255,8 +263,10 @@ export function parseFaaNotam(raw: string): FaaNotam {
   const bodyAndPeriod = normalized.substring(cursor).trim();
 
   // The effective period is always at the end: YYMMDDHHMM-YYMMDDHHMM[EST] or YYMMDDHHMM-PERM
-  // Find the last occurrence of the period pattern
-  const periodMatch = bodyAndPeriod.match(/\s+(\d{10}-(?:\d{10}(?:EST)?|PERM))\s*$/);
+  // (timestamps may also be 12-digit YYYYMMDDHHMM). Find the last occurrence of the period pattern
+  const periodMatch = bodyAndPeriod.match(
+    /\s+(\d{10}(?:\d{2})?-(?:\d{10}(?:\d{2})?(?:EST)?|PERM))\s*$/i,
+  );
   if (!periodMatch) {
     throw new Error('Unable to parse FAA NOTAM effective period');
   }
