@@ -844,3 +844,110 @@ describe('parseNotam - edge cases', () => {
     expect(result.upperLimit).toBe(undefined);
   });
 });
+
+describe('parseNotam - ICAO rendering without a header line (FAA NMS)', () => {
+  // FDC IAP change at Paine Field, as the FAA NMS serves its ICAO rendering: starts at the Q-line
+  const NMS_KPAE_IAP = [
+    'Q) KZSE/QPIXX/I/NBO/A/000/999/4754N12216W005',
+    'A) KPAE',
+    'B) 2609081544',
+    'C) 2704201542EST',
+    'E) PAE SEATTLE PAINE FLD INTL, EVERETT, WA.',
+    'RNAV (GPS) X RWY 16R, AMDT 1...',
+    'LNAV CATS C/D VIS RVR 6000.',
+  ].join('\n');
+
+  it('parses a NOTAM that starts at the Q-line, leaving id and action undefined', () => {
+    const result = parseNotam(NMS_KPAE_IAP);
+    expect(result.id).toBeUndefined();
+    expect(result.action).toBeUndefined();
+    expect(result.referencedId).toBeUndefined();
+    expect(result.qualifier?.fir).toBe('KZSE');
+    expect(result.qualifier?.notamCode).toBe('QPIXX');
+    expect(result.locationCodes).toEqual(['KPAE']);
+    expect(result.effectiveFrom).toEqual({ year: 26, month: 9, day: 8, hour: 15, minute: 44 });
+    expect(result.effectiveUntil).toEqual({ year: 27, month: 4, day: 20, hour: 15, minute: 42 });
+    expect(result.isEstimatedEnd).toBe(true);
+    expect(result.text).toBe(
+      'PAE SEATTLE PAINE FLD INTL, EVERETT, WA. RNAV (GPS) X RWY 16R, AMDT 1... LNAV CATS C/D VIS RVR 6000.',
+    );
+  });
+
+  it('matches the same NOTAM with a header apart from id and action', () => {
+    const withHeader = parseNotam(`A0001/26 NOTAMN\n${NMS_KPAE_IAP}`);
+    const without = parseNotam(NMS_KPAE_IAP);
+    expect(withHeader.id).toBe('A0001/26');
+    expect(withHeader.action).toBe('NEW');
+    const { id: _id, action: _action, raw: _raw, ...rest } = withHeader;
+    const { raw: _rawWithout, ...restWithout } = without;
+    expect(restWithout).toEqual(rest);
+  });
+
+  it('still requires a header when the text does not start at the Q-line', () => {
+    expect(() =>
+      parseNotam('A) KPAE B) 2609081544 C) 2704201542EST E) PAE SEATTLE PAINE FLD INTL'),
+    ).toThrow(/Unable to parse NOTAM header/);
+  });
+
+  it('still requires items A, B, and E without a header', () => {
+    expect(() => parseNotam('Q) KZSE/QPIXX/I/NBO/A/000/999/4754N12216W005\nB) 2609081544')).toThrow(
+      /Item A/,
+    );
+  });
+});
+
+describe('parseNotam - CREATED/SOURCE footer', () => {
+  // NOTAM with a trailing feed footer (from the svoop/notam test factory)
+  const WITH_FOOTER = [
+    'A0135/20 NOTAMN',
+    'Q) EGTT/QMRXX/IV/NBO/A/000/999/5129N00028W005',
+    'A) EGLL',
+    'B) 0201010600',
+    'C) 0203312300',
+    'D) MON-WED FRI SR MINUS15-1130 EXC 01-02 FEB 01-02 MAR 01-02',
+    'E) RWY 09R/27L DUE WIP NO CENTRELINE, TDZ OR SALS LIGHTING AVBL',
+    'F) 2000 FT AMSL',
+    'G) 2050 FT AMSL',
+    'CREATED: 01 Jan 2002 01:00:00',
+    'SOURCE: LSSNYNYX',
+  ].join('\n');
+
+  it('does not include the footer in the last item', () => {
+    const result = parseNotam(WITH_FOOTER);
+    expect(result.id).toBe('A0135/20');
+    expect(result.upperLimit).toBe('2050 FT AMSL');
+    expect(result.lowerLimit).toBe('2000 FT AMSL');
+    expect(result.text).toBe('RWY 09R/27L DUE WIP NO CENTRELINE, TDZ OR SALS LIGHTING AVBL');
+  });
+
+  it('does not include the footer when the last item is E', () => {
+    const noLimits = WITH_FOOTER.replace('\nF) 2000 FT AMSL\nG) 2050 FT AMSL', '');
+    const result = parseNotam(noLimits);
+    expect(result.text).toBe('RWY 09R/27L DUE WIP NO CENTRELINE, TDZ OR SALS LIGHTING AVBL');
+    expect(result.lowerLimit).toBeUndefined();
+    expect(result.upperLimit).toBeUndefined();
+  });
+
+  it('keeps the original string, footer included, in raw', () => {
+    expect(parseNotam(WITH_FOOTER).raw).toBe(WITH_FOOTER);
+  });
+
+  it('ignores a SOURCE line on its own', () => {
+    const result = parseNotam(WITH_FOOTER.replace('CREATED: 01 Jan 2002 01:00:00\n', ''));
+    expect(result.upperLimit).toBe('2050 FT AMSL');
+  });
+
+  it('does not strip CREATED text that is not a trailing footer', () => {
+    const result = parseNotam(
+      [
+        'A0135/20 NOTAMN',
+        'Q) EGTT/QMRXX/IV/NBO/A/000/999/5129N00028W005',
+        'A) EGLL',
+        'B) 0201010600',
+        'C) 0203312300',
+        'E) RWY 09R/27L CREATED: 01 Jan 2002 01:00:00 AS DEPICTED',
+      ].join('\n'),
+    );
+    expect(result.text).toBe('RWY 09R/27L CREATED: 01 Jan 2002 01:00:00 AS DEPICTED');
+  });
+});
