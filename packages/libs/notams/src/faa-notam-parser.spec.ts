@@ -257,6 +257,26 @@ const FDC_BOS_IAP = [
   'GDM VOR/DME UNMONITORED. 2604041524-2605041524EST',
 ].join('\n');
 
+// -- En-route FDC samples with a state prefix on the keyword (from KZSE, NMS 2026-10) --
+
+// ROUTE - Airway restriction with "OR.." state prefix (from KZSE)
+const FDC_ZSE_ROUTE_OR = [
+  '!FDC 6/9312 ZSE OR..ROUTE ZSE.',
+  'V182, V27 GAMMA INT, OR MRA 8000.',
+  'RBG VOR/DME R-295 UNUSABLE BELOW 8000 AT GAMMA. 2605111405-2805111405EST',
+].join('\n');
+
+// ROUTE - Airway MEA change with "WA.." state prefix (from KZSE)
+const FDC_ZSE_ROUTE_WA = [
+  '!FDC 5/8846 ZSE WA..ROUTE ZSE.',
+  'V23 EGRET, WA TO ACORD, WA MEA 4500.',
+  '2503032206-2702180901EST',
+].join('\n');
+
+// AIRSPACE - Wildfire TFR with "WA.." state prefix (from KZSE)
+const FDC_ZSE_AIRSPACE_TFR =
+  '!FDC 6/6654 ZSE WA..AIRSPACE 28NM W TWISP, WA..TEMPORARY FLIGHT RESTRICTIONS. PURSUANT TO 14 CFR SECTION 91.137(A)(2) TEMPORARY FLIGHT RESTRICTIONS ARE IN EFFECT TO PROVIDE A SAFE ENVIRONMENT FOR FIRE FIGHTING ACFT OPS. WI AN AREA DEFINED AS 3NM RADIUS OF 482100N1205000W (EAT322062.3) SFC-10000FT CENTRAL WASHINGTON DISPATCH TEL 509-884-3473 OR FREQ 125.300 SISI FIRE IS IN CHARGE OF THE OPERATION. SEATTLE/ZSE/ARTCC TEL 253-351-3698 IS THE FAA CDN FAC. DLY 1600-0200 2610011600-2610150200';
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -789,6 +809,53 @@ describe('parseFaaNotam', () => {
         expect(result.keyword).toBe('SID');
         expect(result.airportName).toBe('TED STEVENS ANCHORAGE INTL');
         expect(result.airportLocation).toBe('ANCHORAGE, AK');
+      });
+    });
+
+    describe('state-prefixed keyword (en-route FDCs)', () => {
+      it('parses ROUTE after an "OR.." state prefix', () => {
+        const result = parseFaaNotam(FDC_ZSE_ROUTE_OR);
+        expect(result.classification).toBe('FDC');
+        expect(result.notamNumber).toBe('6/9312');
+        expect(result.locationCode).toBe('ZSE');
+        expect(result.keyword).toBe('ROUTE');
+        expect(result.state).toBe('OR');
+        expect(result.airportName).toBeUndefined();
+        expect(result.airportLocation).toBeUndefined();
+        assert(result.text.startsWith('ZSE.'));
+        assert(result.text.includes('V182, V27 GAMMA INT, OR MRA 8000.'));
+        expect(result.isEstimatedEnd).toBe(true);
+        expect(result.effectiveFrom).toEqual({ year: 26, month: 5, day: 11, hour: 14, minute: 5 });
+        expect(result.effectiveUntil).toEqual({ year: 28, month: 5, day: 11, hour: 14, minute: 5 });
+      });
+
+      it('parses ROUTE after a "WA.." state prefix', () => {
+        const result = parseFaaNotam(FDC_ZSE_ROUTE_WA);
+        expect(result.keyword).toBe('ROUTE');
+        expect(result.state).toBe('WA');
+        expect(result.text).toBe('ZSE. V23 EGRET, WA TO ACORD, WA MEA 4500');
+      });
+
+      it('parses AIRSPACE after a "WA.." state prefix', () => {
+        const result = parseFaaNotam(FDC_ZSE_AIRSPACE_TFR);
+        expect(result.keyword).toBe('AIRSPACE');
+        expect(result.state).toBe('WA');
+        expect(result.airportName).toBeUndefined();
+        assert(result.text.startsWith('28NM W TWISP, WA..TEMPORARY FLIGHT RESTRICTIONS.'));
+        assert(result.text.endsWith('DLY 1600-0200'));
+        expect(result.effectiveUntil).toEqual({ year: 26, month: 10, day: 15, hour: 2, minute: 0 });
+        expect(result.isEstimatedEnd).toBe(false);
+      });
+
+      it('omits state when the keyword follows the location directly', () => {
+        expect(parseFaaNotam(FDC_ATL_IAP)).not.toHaveProperty('state');
+        expect(parseFaaNotam(ATL_NAV_ILS)).not.toHaveProperty('state');
+      });
+
+      it('does not treat a state prefix without a keyword as valid', () => {
+        expect(() =>
+          parseFaaNotam('!FDC 6/9312 ZSE OR..BOGUS ZSE. V182 MRA 8000. 2605111405-2805111405EST'),
+        ).toThrow(/keyword/);
       });
     });
   });
