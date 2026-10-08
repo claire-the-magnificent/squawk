@@ -93,12 +93,12 @@ export type NotamPurpose = 'N' | 'B' | 'O' | 'M' | 'K';
 // @public
 export interface NotamQualifier {
     conditionCode: NotamConditionCode;
-    coordinates: Coordinates;
+    coordinates?: Coordinates;
     fir: string;
     lowerAltitudeFt?: number;
     notamCode: string;
     purposes: NotamPurpose[];
-    radiusNm: number;
+    radiusNm?: number;
     scope: NotamScope;
     subjectCode: NotamSubjectCode;
     trafficType: NotamTrafficType;

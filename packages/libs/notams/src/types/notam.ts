@@ -723,20 +723,20 @@ export interface NotamQualifier {
   subjectCode: NotamSubjectCode;
   /** Two-letter NOTAM condition code from the Q-code (4th and 5th letters, e.g. "LC" for closed, "AS" for unserviceable). */
   conditionCode: NotamConditionCode;
-  /** Traffic type qualifier indicating which flight rules are affected. */
+  /** Traffic type qualifier indicating which flight rules are affected. `IFR_VFR` when the field is empty or unrecognized. */
   trafficType: NotamTrafficType;
   /** Purpose codes indicating why the NOTAM was issued (e.g. [N, B, O] for immediate attention + briefing + operations). */
   purposes: NotamPurpose[];
-  /** Geographic scope of the NOTAM. */
+  /** Geographic scope of the NOTAM. `AERODROME` when the field is empty or unrecognized. */
   scope: NotamScope;
   /** Lower altitude limit in feet. Undefined when the lower limit is the surface. */
   lowerAltitudeFt?: number;
   /** Upper altitude limit in feet. 99900 indicates unlimited. */
   upperAltitudeFt: number;
-  /** Center point coordinates of the NOTAM's area of applicability. */
-  coordinates: Coordinates;
-  /** Radius in nautical miles from the center point. */
-  radiusNm: number;
+  /** Center point coordinates of the NOTAM's area of applicability. Undefined when the Q-line leaves the field empty. */
+  coordinates?: Coordinates;
+  /** Radius in nautical miles from the center point. Undefined when the Q-line leaves the field empty. */
+  radiusNm?: number;
 }
 
 /**

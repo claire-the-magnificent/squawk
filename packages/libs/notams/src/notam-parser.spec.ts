@@ -572,6 +572,7 @@ describe('parseNotam - Q-line qualifier', () => {
   it('parses northern/western hemisphere coordinates', () => {
     const result = parseNotam(ANC_RUNWAY_CLOSURE);
     assert(result.qualifier);
+    assert(result.qualifier.coordinates);
     const { lat, lon } = result.qualifier.coordinates;
     assert(lat > 61.0 && lat < 61.3, `expected lat near 61.17, got ${lat}`);
     assert(lon < -149.7 && lon > -150.0, `expected lon near -149.8, got ${lon}`);
@@ -581,6 +582,7 @@ describe('parseNotam - Q-line qualifier', () => {
   it('parses northern/eastern hemisphere coordinates', () => {
     const result = parseNotam(EASTERN_HEMISPHERE);
     assert(result.qualifier);
+    assert(result.qualifier.coordinates);
     assert(result.qualifier.coordinates.lat > 48.9, 'expected lat near 49');
     assert(
       result.qualifier.coordinates.lon > 2.2 && result.qualifier.coordinates.lon < 2.5,
@@ -592,6 +594,7 @@ describe('parseNotam - Q-line qualifier', () => {
   it('parses southern/eastern hemisphere coordinates', () => {
     const result = parseNotam(SOUTHERN_HEMISPHERE);
     assert(result.qualifier);
+    assert(result.qualifier.coordinates);
     assert(
       result.qualifier.coordinates.lat < -26.0,
       'expected negative lat for southern hemisphere',
@@ -603,6 +606,7 @@ describe('parseNotam - Q-line qualifier', () => {
   it('parses southern/western hemisphere coordinates', () => {
     const result = parseNotam(SW_HEMISPHERE);
     assert(result.qualifier);
+    assert(result.qualifier.coordinates);
     assert(
       result.qualifier.coordinates.lat < -22.0,
       'expected negative lat for southern hemisphere',
@@ -842,5 +846,95 @@ describe('parseNotam - edge cases', () => {
     expect(result.schedule).toBe(undefined);
     expect(result.lowerLimit).toBe(undefined);
     expect(result.upperLimit).toBe(undefined);
+  });
+});
+
+describe('parseNotam - partial Q-line', () => {
+  // ARTCC route NOTAM from the FAA NMS with empty traffic, purpose, scope, and coordinates fields (KZSE)
+  const EMPTY_COORDINATES = [
+    'A0737/25 NOTAMN',
+    'Q) KZSE/QXXXX////000/999/',
+    'A) KZSE',
+    'B) 2503032206',
+    'C) 2702180901 EST',
+    'E) ZSE WA..ROUTE ZSE.',
+    'V23 EGRET, WA TO ACORD, WA MEA 4500.',
+  ].join('\n');
+
+  // ARTCC route NOTAM from the FAA NMS with empty traffic, purpose, and scope fields but with coordinates (KZSE)
+  const EMPTY_TRAFFIC_PURPOSE_SCOPE = [
+    'A2158/26 NOTAMN',
+    'Q) KZSE/QARXX////000/080/4450N12235W005',
+    'A) KZSE',
+    'B) 2605111405',
+    'C) 2805111405',
+    'E) OR..ROUTE ZSE. V182, V27 GAMMA INT, OR MRA 8000. RBG VOR/DME R-295 UNUSABLE BELOW 8000 AT GAMMA.',
+    'F) SFC',
+    'G) 8000FT',
+  ].join('\n');
+
+  // Taxiway closure at Yakima (KYKM 09/013) with the 8th Q-line field carrying only the radius
+  const RADIUS_ONLY = [
+    'A0001/26 NOTAMN',
+    'Q) KZSE/QMXLC/IV/M/A/000/999/005',
+    'A) KYKM',
+    'B) 2609281500',
+    'C) 2611231500',
+    'E) TWY B1, B2 CLSD CONSTRUCTION',
+  ].join('\n');
+
+  it('parses a Q-line whose coordinates field is empty', () => {
+    const result = parseNotam(EMPTY_COORDINATES);
+    assert(result.qualifier, 'expected a qualifier');
+    expect(result.qualifier.fir).toBe('KZSE');
+    expect(result.qualifier.notamCode).toBe('QXXXX');
+    expect(result.qualifier.subjectCode).toBe('XX');
+    expect(result.qualifier.conditionCode).toBe('XX');
+    expect(result.qualifier.purposes).toEqual([]);
+    expect(result.qualifier.lowerAltitudeFt).toBeUndefined();
+    expect(result.qualifier.upperAltitudeFt).toBe(99900);
+    expect(result.qualifier.coordinates).toBeUndefined();
+    expect(result.qualifier.radiusNm).toBeUndefined();
+    expect(result.locationCodes).toEqual(['KZSE']);
+    expect(result.isEstimatedEnd).toBe(true);
+  });
+
+  it('parses empty traffic, purpose, and scope fields next to populated coordinates', () => {
+    const result = parseNotam(EMPTY_TRAFFIC_PURPOSE_SCOPE);
+    assert(result.qualifier, 'expected a qualifier');
+    expect(result.qualifier.notamCode).toBe('QARXX');
+    expect(result.qualifier.subjectCode).toBe('AR');
+    expect(result.qualifier.purposes).toEqual([]);
+    expect(result.qualifier.upperAltitudeFt).toBe(8000);
+    assert(result.qualifier.coordinates);
+    assert(Math.abs(result.qualifier.coordinates.lat - (44 + 50 / 60)) < 1e-9);
+    assert(Math.abs(result.qualifier.coordinates.lon - -(122 + 35 / 60)) < 1e-9);
+    expect(result.qualifier.radiusNm).toBe(5);
+    expect(result.lowerLimit).toBe('SFC');
+    expect(result.upperLimit).toBe('8000FT');
+  });
+
+  it('parses a coordinates field that carries only the radius', () => {
+    const result = parseNotam(RADIUS_ONLY);
+    assert(result.qualifier, 'expected a qualifier');
+    expect(result.qualifier.trafficType).toBe('IFR_VFR');
+    expect(result.qualifier.purposes).toEqual(['M']);
+    expect(result.qualifier.coordinates).toBeUndefined();
+    expect(result.qualifier.radiusNm).toBe(5);
+  });
+
+  it('still leaves the qualifier undefined when the coordinates field is malformed', () => {
+    const malformed = EMPTY_TRAFFIC_PURPOSE_SCOPE.replace('4450N12235W005', '4450N122W005');
+    const result = parseNotam(malformed);
+    expect(result.qualifier).toBeUndefined();
+    expect(result.locationCodes).toEqual(['KZSE']);
+  });
+
+  it('still leaves the qualifier undefined when the Q-line has fewer than 8 fields', () => {
+    const short = EMPTY_COORDINATES.replace(
+      'Q) KZSE/QXXXX////000/999/',
+      'Q) KZSE/QXXXX////000/999',
+    );
+    expect(parseNotam(short).qualifier).toBeUndefined();
   });
 });

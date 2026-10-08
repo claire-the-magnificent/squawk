@@ -35,14 +35,25 @@ function parseNotamDateTime(str: string): NotamDateTime | undefined {
 
 /**
  * Parses the Q-line coordinate and radius field.
- * Format: DDMMd/DDDMMd/NNN (e.g. "5129N00028W005").
+ * Format: DDMMd/DDDMMd/NNN (e.g. "5129N00028W005"). The field may also be
+ * empty, or carry only the 3-digit radius, as some issuers send (e.g. "005").
  *
  * @param coordStr - The coordinate/radius string from the Q-line.
- * @returns The parsed coordinates and radius, or undefined if invalid.
+ * @returns The parsed coordinates and radius (each absent when the field does not carry it), or
+ *   undefined if the field is malformed.
  */
 function parseQLineCoordinates(
   coordStr: string,
-): { coordinates: Coordinates; radiusNm: number } | undefined {
+): { coordinates?: Coordinates; radiusNm?: number } | undefined {
+  if (coordStr === '') {
+    return {};
+  }
+
+  const radiusOnly = coordStr.match(/^(\d{3})$/);
+  if (radiusOnly) {
+    return { radiusNm: parseInt(radiusOnly[1]!, 10) };
+  }
+
   const match = coordStr.match(/^(\d{2})(\d{2})([NS])(\d{3})(\d{2})([EW])(\d{3})$/);
   if (!match) {
     return undefined;
@@ -185,8 +196,8 @@ function parseQLine(qLine: string): NotamQualifier | undefined {
     scope,
     ...(lowerAltitudeFt !== undefined && lowerAltitudeFt !== 0 ? { lowerAltitudeFt } : {}),
     upperAltitudeFt,
-    coordinates: coordResult.coordinates,
-    radiusNm: coordResult.radiusNm,
+    ...(coordResult.coordinates ? { coordinates: coordResult.coordinates } : {}),
+    ...(coordResult.radiusNm !== undefined ? { radiusNm: coordResult.radiusNm } : {}),
   };
 }
 
