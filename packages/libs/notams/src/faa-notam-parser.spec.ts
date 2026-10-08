@@ -999,6 +999,31 @@ describe('parseFaaNotam', () => {
     });
   });
 
+  describe('combined forms', () => {
+    it('parses a lowercase series-letter military NOTAM', () => {
+      const result = parseFaaNotam(KGRF_OBST_CRANE.toLowerCase());
+      expect(result.accountability).toBe('KGRF');
+      expect(result.notamNumber).toBe('M0554/26');
+      expect(result.locationCode).toBe('GRF');
+      expect(result.keyword).toBe('OBST');
+    });
+
+    it('parses a lowercase state-prefixed FDC', () => {
+      const result = parseFaaNotam(FDC_ZSE_ROUTE_WA.toLowerCase());
+      expect(result.keyword).toBe('ROUTE');
+      expect(result.state).toBe('WA');
+    });
+
+    it('parses a state-prefixed FDC with 12-digit dates', () => {
+      const result = parseFaaNotam(
+        '!FDC 5/8846 ZSE WA..ROUTE ZSE. V23 EGRET, WA TO ACORD, WA MEA 4500. 202503032206-202702180901EST',
+      );
+      expect(result.state).toBe('WA');
+      expect(result.effectiveFrom).toEqual({ year: 25, month: 3, day: 3, hour: 22, minute: 6 });
+      expect(result.isEstimatedEnd).toBe(true);
+    });
+  });
+
   describe('untested keywords (constructed data)', () => {
     it('parses COM keyword', () => {
       const result = parseFaaNotam(CONSTRUCTED_COM);
